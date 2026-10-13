@@ -88,7 +88,9 @@ async function openSidePane($: EngineInterface): Promise<string> {
     cwd,
   )
   if (argv === null) {
-    return 'Open a new Claude Code session and paste it (no Windows Terminal or tmux to split).'
+    // The desktop app, VS Code or a terminal that cannot be split: a mod has
+    // no way to open a new chat there, so the person starts one.
+    return 'Start a new session and paste it.'
   }
 
   try {
@@ -158,7 +160,9 @@ async function runUpgrade($: EngineInterface, provider: Provider, given: string)
     }
     const opened = await openSidePane($)
 
-    return `Upgraded with ${name} and copied. ${opened}\n\n${upgraded}`
+    // One line only: the prompt is on the clipboard, and printing it here
+    // would put it in the very chat it is meant to leave.
+    return `Upgraded with ${name} and copied. ${opened}`
   } catch (error) {
     // `$.ui.ask` rejects when the person dismisses a question: we stop there.
     const message = error instanceof Error ? error.message : String(error)

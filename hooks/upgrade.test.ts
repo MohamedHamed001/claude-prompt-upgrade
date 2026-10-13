@@ -111,7 +111,7 @@ test('/upgrade-prompt -codex asks, copies the rewrite, then opens a tmux pane', 
 
   const result = await $.command.run({ ...RUN, command: 'upgrade-prompt', args: '-codex fix login' })
 
-  expect(result.text).toContain('Upgraded with Codex and copied')
+  expect(result.text).toBe('Upgraded with Codex and copied. Paste it in the new session beside this one.')
   expect(codexInputs[0]).toContain('fix login')
   expect(codexInputs[1]).toContain('Which part? Login form')
   expect(copied).toEqual(['Fix the login form so it shows an error on a wrong password.'])
@@ -159,5 +159,34 @@ test('/upgrade-prompt with no flag goes to Claude, upgrades the draft, and shows
   expect(result.text).toContain('could not copy it (no-clipboard)')
   expect(result.text).toContain('Add a dark mode to every screen.')
   // Nothing to paste, so no pane.
+  expect(commands).toEqual([])
+})
+
+test('outside a splittable terminal it copies, nudges in one line, and opens nothing', async ($, on) => {
+  const commands: string[][] = []
+  let calls = 0
+  on('model.complete', () => {
+    calls += 1
+    const text = calls === 1
+      ? '[{"header":"Where","question":"Which screens?","options":["All","Settings only"]}]'
+      : 'Add a dark mode to every screen.'
+    return { value: { isAnswered: true, text, usage: { input_tokens: 1, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } } }
+  })
+  on('tool.call', { tool: 'AskUserQuestion' }, ($, e) => ({
+    result: { questions: e.questions, answers: { 'Which screens?': 'All' } },
+  }))
+  on('ui.copy', () => ({ value: { isCopied: true } }))
+  // The desktop app: neither TMUX nor WT_SESSION is set.
+  on('env.get', () => ({ value: undefined }))
+  on('session.cwd', () => ({ value: '/repo' }))
+  on('process.run', ($, e) => {
+    commands.push([...e.argv])
+    return ran('')
+  })
+
+  const result = await $.command.run({ ...RUN, command: 'upgrade-prompt', args: 'add dark mode' })
+
+  // The prompt itself stays out of the chat.
+  expect(result.text).toBe('Upgraded with Claude and copied. Start a new session and paste it.')
   expect(commands).toEqual([])
 })

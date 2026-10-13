@@ -39,7 +39,8 @@ Then:
    goal, the scope, constraints, the output). You answer them in the usual question dialog, or
    type your own answer. The status line under the prompt says which step it is on.
 2. The same model rewrites your prompt with your answers.
-3. The rewritten prompt is copied to the clipboard and shown as the command's output.
+3. The rewritten prompt is copied to the clipboard. The chat only gets one line saying so: the
+   prompt itself stays out of the conversation you upgraded it from.
 4. A new `claude` session opens in a split pane beside this one, in the same folder. Paste the
    prompt there (Ctrl+V), change it if you like, and send it.
 
@@ -52,10 +53,10 @@ it first.
 |---|---|
 | tmux (also tmux inside Windows Terminal) | `tmux split-window -h` |
 | Windows Terminal | `wt -w 0 split-pane -V` |
-| Anything else (macOS Terminal, iTerm2, the desktop app, VS Code) | No pane opens; the prompt is still on the clipboard, so paste it into a new session yourself |
+| Anything else (the desktop app, VS Code, macOS Terminal, iTerm2) | No pane opens: a plugin cannot open a new chat there. The one-line output says "Start a new session and paste it" |
 
-If the clipboard is not available (a remote session), no pane opens either: the command's output
-shows the prompt to copy by hand.
+If the clipboard is not available (a remote session), no pane opens either, and the command's
+output shows the whole prompt so you can copy it by hand: the one case where it lands in the chat.
 
 ## How Codex is called
 
