@@ -1,0 +1,11 @@
+{
+  "name": "prompt-upgrade",
+  "version": "0.1.0",
+  "description": "Asks a few quick questions, then rewrites your short prompt into a much more detailed one you can edit, copy or run with one click; Claude or Codex does the rewriting",
+  "author": {
+    "name": "Mohamed Hamed"
+  },
+  "types": "./types/index.d.ts",
+  "repository": "https://github.com/MohamedHamed001/claude-prompt-upgrade",
+  "license": "MIT"
+}

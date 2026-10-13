@@ -1,0 +1,16 @@
+{
+  "name": "claude-prompt-upgrade",
+  "owner": {
+    "name": "Mohamed Hamed"
+  },
+  "plugins": [
+    {
+      "name": "prompt-upgrade",
+      "source": "./",
+      "description": "Asks a few quick questions, then rewrites your short prompt into a much more detailed one you can edit, copy or run with one click; Claude or Codex does the rewriting"
+    }
+  ],
+  "metadata": {
+    "description": "Asks a few quick questions, then rewrites your short prompt into a much more detailed one you can edit, copy or run with one click; Claude or Codex does the rewriting"
+  }
+}
