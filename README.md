@@ -29,9 +29,9 @@ Then start a new session: a session reads its plugins once, when it starts. Upda
 
 | To | Do |
 |---|---|
-| Upgrade a prompt with Claude | `/upgrade fix the login bug` (or `/upgrade -claude fix the login bug`) |
-| Upgrade a prompt with Codex | `/upgrade -codex fix the login bug` |
-| Upgrade what you already typed | `/upgrade -claude` or `/upgrade -codex` with no prompt |
+| Upgrade a prompt with Claude | `/upgrade-prompt fix the login bug` (or `/upgrade-prompt -claude fix the login bug`) |
+| Upgrade a prompt with Codex | `/upgrade-prompt -codex fix the login bug` |
+| Upgrade what you already typed | `/upgrade-prompt -claude` or `/upgrade-prompt -codex` with no prompt |
 
 Then:
 

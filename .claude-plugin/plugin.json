@@ -1,6 +1,6 @@
 {
   "name": "prompt-upgrade",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Asks a few quick questions, then rewrites your short prompt into a much more detailed one, copies it to the clipboard and opens a new Claude Code session beside this one to paste it into; Claude or Codex does the rewriting",
   "author": {
     "name": "Mohamed Hamed"

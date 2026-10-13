@@ -5,7 +5,7 @@ import type { Provider, Question } from '../types'
 
 export type ParsedArgs = { provider: Provider; prompt: string }
 
-// Reads `/upgrade` arguments. A leading flag picks who rewrites:
+// Reads `/upgrade-prompt` arguments. A leading flag picks who rewrites:
 // `-codex`, `--codex`, `- codex` (and the same for claude). No flag means Claude.
 // Whatever follows the flag is the short prompt; it may be empty, in which
 // case the caller upgrades the draft in the prompt box instead.

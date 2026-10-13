@@ -85,7 +85,7 @@ const ran = (stdout: string) => ({
   value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
 })
 
-test('/upgrade -codex asks, copies the rewrite, then opens a tmux pane', async ($, on) => {
+test('/upgrade-prompt -codex asks, copies the rewrite, then opens a tmux pane', async ($, on) => {
   const commands: string[][] = []
   const codexInputs: string[] = []
   const copied: string[] = []
@@ -109,7 +109,7 @@ test('/upgrade -codex asks, copies the rewrite, then opens a tmux pane', async (
   on('env.get', ($, e) => ({ value: e.name === 'TMUX' ? '/tmp/tmux-1/default,1,0' : undefined }))
   on('session.cwd', () => ({ value: '/repo' }))
 
-  const result = await $.command.run({ ...RUN, command: 'upgrade', args: '-codex fix login' })
+  const result = await $.command.run({ ...RUN, command: 'upgrade-prompt', args: '-codex fix login' })
 
   expect(result.text).toContain('Upgraded with Codex and copied')
   expect(codexInputs[0]).toContain('fix login')
@@ -127,13 +127,13 @@ test('a missing codex CLI is reported, and nothing is copied or opened', async (
     return { deny: 'codex: not found' }
   })
 
-  const result = await $.command.run({ ...RUN, command: 'upgrade', args: '-codex fix login' })
+  const result = await $.command.run({ ...RUN, command: 'upgrade-prompt', args: '-codex fix login' })
 
   expect(result.text).toContain('Could not run Codex')
   expect(commands.length).toBe(1)
 })
 
-test('/upgrade with no flag goes to Claude, upgrades the draft, and shows it when the clipboard fails', async ($, on) => {
+test('/upgrade-prompt with no flag goes to Claude, upgrades the draft, and shows it when the clipboard fails', async ($, on) => {
   const models: string[] = []
   const commands: string[][] = []
   on('prompt.read', () => ({ value: { text: 'add dark mode', cursor: 13 } }))
@@ -153,7 +153,7 @@ test('/upgrade with no flag goes to Claude, upgrades the draft, and shows it whe
     return ran('')
   })
 
-  const result = await $.command.run({ ...RUN, command: 'upgrade', args: '' })
+  const result = await $.command.run({ ...RUN, command: 'upgrade-prompt', args: '' })
 
   expect(models).toEqual(['sonnet', 'sonnet'])
   expect(result.text).toContain('could not copy it (no-clipboard)')

@@ -1,4 +1,4 @@
-// Prompt Upgrade: `/upgrade [-claude|-codex] [prompt]` turns a short prompt
+// Prompt Upgrade: `/upgrade-prompt [-claude|-codex] [prompt]` turns a short prompt
 // into a detailed one. The flow is:
 //   1. pick the prompt (the argument, or the draft in the prompt box)
 //   2. the chosen provider writes 2-3 questions; we ask them with `$.ui.ask`
@@ -13,6 +13,11 @@ import type { Answer } from './upgrade'
 import { cleanReply, parseArgs, parseQuestions, questionsPrompt, rewritePrompt, sidePaneCommand } from './upgrade'
 
 const NAMES: Record<Provider, string> = { claude: 'Claude', codex: 'Codex' }
+
+// The slash command. Not `upgrade`: Claude Code ships a built-in /upgrade,
+// and registering a built-in's name throws. One constant, because the
+// registration and the `command.run` matcher must name the same command.
+const COMMAND = 'upgrade-prompt'
 
 // ---- Providers: the one place that knows how to reach Claude or Codex. ----
 // Everything else calls `complete($, provider, prompt)` and gets the same shape
@@ -113,10 +118,10 @@ async function runUpgrade($: EngineInterface, provider: Provider, given: string)
     return 'An upgrade is already running.'
   }
 
-  // 1. The prompt: what was typed after /upgrade, else the draft in the box.
+  // 1. The prompt: what was typed after /upgrade-prompt, else the draft in the box.
   const shortPrompt = given !== '' ? given : (await $.prompt.read()).text.trim()
   if (shortPrompt === '') {
-    return 'Nothing to upgrade: type a prompt first, or use /upgrade -claude <prompt>.'
+    return 'Nothing to upgrade: type a prompt first, or use /upgrade-prompt -claude <prompt>.'
   }
 
   isRunning = true
@@ -167,14 +172,14 @@ async function runUpgrade($: EngineInterface, provider: Provider, given: string)
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
-      name: 'upgrade',
-      description: 'Rewrite a short prompt into a detailed one: /upgrade [-claude|-codex] [prompt]',
+      name: COMMAND,
+      description: 'Rewrite a short prompt into a detailed one: /upgrade-prompt [-claude|-codex] [prompt]',
     })
 
     return next(e)
   })
 
-  on('command.run', { command: 'upgrade' }, async ($, e) => {
+  on('command.run', { command: COMMAND }, async ($, e) => {
     const { provider, prompt } = parseArgs(e.args)
     const text = await runUpgrade($, provider, prompt).catch(error => `Upgrade failed: ${String(error)}`)
     return { text }
