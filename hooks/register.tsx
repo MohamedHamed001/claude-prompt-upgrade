@@ -1,19 +1,16 @@
-// Prompt Upgrade: `/upgrade [-claude|-codex] [prompt]`, or the band's two
-// buttons, turn a short prompt into a detailed one. The flow is:
+// Prompt Upgrade: `/upgrade [-claude|-codex] [prompt]` turns a short prompt
+// into a detailed one. The flow is:
 //   1. pick the prompt (the argument, or the draft in the prompt box)
 //   2. the chosen provider writes 2-3 questions; we ask them with `$.ui.ask`
 //   3. the same provider rewrites the prompt using the answers
-//   4. the band shows the result with Edit / Copy / Run
+//   4. the result goes on the clipboard, and a new `claude` session opens in a
+//      split pane beside this one, ready for you to paste it
 
-import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Provider, Upgrade } from '../types'
+import type { Provider } from '../types'
 import type { Answer } from './upgrade'
-import { cleanReply, parseArgs, parseQuestions, questionsPrompt, rewritePrompt } from './upgrade'
-
-const IDLE: Upgrade = { status: 'idle' }
-const upgrade = atom({ plugin: 'prompt-upgrade', key: 'upgrade' } as const, IDLE)
+import { cleanReply, parseArgs, parseQuestions, questionsPrompt, rewritePrompt, sidePaneCommand } from './upgrade'
 
 const NAMES: Record<Provider, string> = { claude: 'Claude', codex: 'Codex' }
 
@@ -73,13 +70,46 @@ async function completeWithCodex($: EngineInterface, prompt: string): Promise<Co
   return { isOk: true, text: result.stdout }
 }
 
+// ---- The side session ----
+
+// Opens `claude` in a split pane beside this terminal, in the same folder.
+// Which command does that depends on the terminal, which we tell apart by the
+// variables each one sets for the programs inside it. Returns a line saying
+// what happened; never throws.
+async function openSidePane($: EngineInterface): Promise<string> {
+  const cwd = await $.session.cwd()
+  const argv = sidePaneCommand(
+    { isWindowsTerminal: (await $.env.get('WT_SESSION')) !== undefined, isTmux: (await $.env.get('TMUX')) !== undefined },
+    cwd,
+  )
+  if (argv === null) {
+    return 'Open a new Claude Code session and paste it (no Windows Terminal or tmux to split).'
+  }
+
+  try {
+    // Both commands return as soon as the pane exists; the session in it
+    // runs on its own, so a short timeout is enough.
+    const result = await $.process.run(argv, { timeoutMs: 15000 })
+    if (result.exitCode !== 0) {
+      return `Could not open a side session (${argv[0]} exited with ${result.exitCode}); paste it in a new session.`
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return `Could not open a side session (${message}); paste it in a new session.`
+  }
+
+  return 'Paste it in the new session beside this one.'
+}
+
 // ---- The flow ----
 
-// The whole flow. Returns a line for the person (the command's output, or a
-// toast when a button started it). Every step updates the band so the person
-// can see where it is.
+// A module variable, not `$.state`: it only guards against two upgrades at
+// once, and starting over on a reload is fine.
+let isRunning = false
+
+// The whole flow. Returns a line for the person: the command's output.
 async function runUpgrade($: EngineInterface, provider: Provider, given: string): Promise<string> {
-  if ((await read($, upgrade)).status === 'working') {
+  if (isRunning) {
     return 'An upgrade is already running.'
   }
 
@@ -89,42 +119,48 @@ async function runUpgrade($: EngineInterface, provider: Provider, given: string)
     return 'Nothing to upgrade: type a prompt first, or use /upgrade -claude <prompt>.'
   }
 
-  const setStep = (step: string) => update($, upgrade, (): Upgrade => ({ status: 'working', provider, step }))
+  isRunning = true
   const name = NAMES[provider]
 
   try {
     // 2. Questions, written by the chosen provider.
-    await setStep(`${name} is choosing questions…`)
+    $.ui.status(`Prompt Upgrade: ${name} is choosing questions…`)
     const asked = await complete($, provider, questionsPrompt(shortPrompt))
     if (!asked.isOk) {
       return asked.reason
     }
 
+    $.ui.status('Prompt Upgrade: waiting for your answers…')
     const answers: Answer[] = []
     for (const q of parseQuestions(asked.text)) {
-      await setStep('Waiting for your answers…')
       const answer = await $.ui.ask(q.question, { header: q.header, options: q.options })
       answers.push({ question: q.question, answer })
     }
 
     // 3. The rewrite, by the same provider.
-    await setStep(`${name} is rewriting your prompt…`)
+    $.ui.status(`Prompt Upgrade: ${name} is rewriting your prompt…`)
     const rewritten = await complete($, provider, rewritePrompt(shortPrompt, answers))
     if (!rewritten.isOk) {
       return rewritten.reason
     }
-
-    // 4. Hand it to the band.
     const upgraded = cleanReply(rewritten.text)
-    await update($, upgrade, (): Upgrade => ({ status: 'done', provider, original: shortPrompt, upgraded }))
-    return `Upgraded with ${name}. Edit, Copy or Run it from the band above the prompt.`
+
+    // 4. Clipboard first, so the prompt is safe even if the pane fails to open.
+    const copied = await $.ui.copy({ text: upgraded })
+    if (!copied.isCopied) {
+      // Without the clipboard there is nothing to paste: show the prompt instead.
+      return `Upgraded with ${name}, but could not copy it (${copied.reason}):\n\n${upgraded}`
+    }
+    const opened = await openSidePane($)
+
+    return `Upgraded with ${name} and copied. ${opened}\n\n${upgraded}`
   } catch (error) {
     // `$.ui.ask` rejects when the person dismisses a question: we stop there.
     const message = error instanceof Error ? error.message : String(error)
     return `Upgrade stopped: ${message}`
   } finally {
-    // Whatever happened, never leave the band stuck on "working".
-    await update($, upgrade, current => (current.status === 'working' ? IDLE : current))
+    isRunning = false
+    $.ui.status(undefined)
   }
 }
 
@@ -143,68 +179,4 @@ export const register: Register = on => {
     const text = await runUpgrade($, provider, prompt).catch(error => `Upgrade failed: ${String(error)}`)
     return { text }
   })
-
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey || e.props.isWorking) {
-      return next(e)
-    }
-
-    const { Box, Button, Text } = $.ui.resolve(e)
-    const state = await read($, upgrade)
-
-    // A button press starts the flow; its result line shows as a toast.
-    const start = async (provider: Provider) => $.ui.toast(await runUpgrade($, provider, ''))
-
-    if (state.status === 'working') {
-      return (
-        <Box>
-          <Text dimColor>Prompt Upgrade: {state.step}</Text>
-        </Box>
-      )
-    }
-
-    if (state.status === 'done') {
-      const close = () => update($, upgrade, () => IDLE)
-      const edit = async () => {
-        await $.prompt.fill({ text: state.upgraded, mode: 'replace' })
-        await close()
-      }
-      const copy = async () => {
-        const copied = await $.ui.copy({ text: state.upgraded, surface: e.surface })
-        $.ui.toast(copied.isCopied ? 'Copied the upgraded prompt.' : `Could not copy (${copied.reason}).`)
-      }
-      const run = async () => {
-        await close()
-        await $.prompt.submit({ text: state.upgraded })
-      }
-
-      return (
-        <Box flexDirection="column">
-          <Text dimColor>Upgraded by {NAMES[state.provider]}:</Text>
-          <Text wrap="wrap">{preview(state.upgraded)}</Text>
-          <Box>
-            <Button key="edit" label="Edit" variant="primary" onPress={edit} />
-            <Button key="copy" label="Copy" onPress={copy} />
-            <Button key="run" label="Run" onPress={run} />
-            <Button key="close" label="Dismiss" role="dismiss" onPress={close} />
-          </Box>
-        </Box>
-      )
-    }
-
-    return (
-      <Box>
-        <Text dimColor>Upgrade your draft: </Text>
-        <Button key="claude" label="Claude" dimColor onPress={() => start('claude')} />
-        <Button key="codex" label="Codex" dimColor onPress={() => start('codex')} />
-      </Box>
-    )
-  })
-}
-
-// The band is small; show the first lines and say how much more there is.
-function preview(text: string): string {
-  const lines = text.split('\n')
-  const shown = lines.slice(0, 4).join('\n')
-  return lines.length > 4 ? `${shown}\n… ${lines.length - 4} more lines (Edit to see it all)` : shown
 }

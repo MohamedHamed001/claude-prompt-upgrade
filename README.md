@@ -2,8 +2,9 @@
 
 A plugin for [Claude Code](https://docs.claude.com/en/docs/claude-code): **prompt-upgrade**.
 
-Asks you a few quick questions, then rewrites your short prompt into a much more detailed one you
-can edit, copy or run with one click. You choose who does the rewriting: Claude or Codex.
+Asks you a few quick questions, then rewrites your short prompt into a much more detailed one,
+copies it to the clipboard and opens a new Claude Code session beside this one to paste it into.
+You choose who does the rewriting: Claude or Codex.
 
 Part of [claude-mods](https://github.com/MohamedHamed001/claude-mods), which lists this plugin and its siblings.
 
@@ -30,27 +31,31 @@ Then start a new session: a session reads its plugins once, when it starts. Upda
 |---|---|
 | Upgrade a prompt with Claude | `/upgrade fix the login bug` (or `/upgrade -claude fix the login bug`) |
 | Upgrade a prompt with Codex | `/upgrade -codex fix the login bug` |
-| Upgrade what you already typed | `/upgrade -claude` or `/upgrade -codex` with no prompt, or press **Claude** / **Codex** in the band above the prompt |
+| Upgrade what you already typed | `/upgrade -claude` or `/upgrade -codex` with no prompt |
 
 Then:
 
 1. The chosen model reads your prompt and writes 2 or 3 multiple-choice questions about it (the
    goal, the scope, constraints, the output). You answer them in the usual question dialog, or
-   type your own answer.
+   type your own answer. The status line under the prompt says which step it is on.
 2. The same model rewrites your prompt with your answers.
-3. The band above the prompt shows the result:
+3. The rewritten prompt is copied to the clipboard and shown as the command's output.
+4. A new `claude` session opens in a split pane beside this one, in the same folder. Paste the
+   prompt there (Ctrl+V), change it if you like, and send it.
 
-```
-Upgraded by Codex:
-Fix the login form so it shows an error on a wrong password. …
-[ Edit ] [ Copy ] [ Run ] [ Dismiss ]
-```
+The new session starts empty rather than with the prompt already sent, so you can read and edit
+it first.
 
-- **Edit** puts it in the prompt box, replacing your draft, to change before you send it.
-- **Copy** puts it on the clipboard.
-- **Run** sends it.
+### Where the side session opens
 
-Dismissing a question stops the upgrade.
+| Terminal | How |
+|---|---|
+| tmux (also tmux inside Windows Terminal) | `tmux split-window -h` |
+| Windows Terminal | `wt -w 0 split-pane -V` |
+| Anything else (macOS Terminal, iTerm2, the desktop app, VS Code) | No pane opens; the prompt is still on the clipboard, so paste it into a new session yourself |
+
+If the clipboard is not available (a remote session), no pane opens either: the command's output
+shows the prompt to copy by hand.
 
 ## How Codex is called
 
@@ -69,8 +74,9 @@ claude plugin test .
 ```
 
 `hooks/upgrade.ts` holds the pure logic (reading the `-codex` flag, the two prompts, reading the
-questions back) and `hooks/register.tsx` the command, the flow and the band. Calls on `$` stay in
-`register.tsx`: the engine follows `$` only into functions declared in the hooks module itself.
+questions back, the split-pane command for each terminal) and `hooks/register.tsx` the command
+and the flow. Calls on `$` stay in `register.tsx`: the engine follows `$` only into functions
+declared in the hooks module itself.
 
 ## Licence
 

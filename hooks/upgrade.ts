@@ -139,3 +139,22 @@ export function cleanReply(reply: string): string {
   const fenced = trimmed.match(/^```[a-zA-Z]*\n([\s\S]*?)\n```$/)
   return fenced?.[1] === undefined ? trimmed : fenced[1].trim()
 }
+
+export type Terminal = { isWindowsTerminal: boolean; isTmux: boolean }
+
+// The command that opens a new `claude` session in a split pane beside this
+// one, in `cwd`, or null when this terminal cannot be split from outside.
+// tmux wins over Windows Terminal: tmux running inside Windows Terminal (WSL)
+// sets both, and only tmux knows which of its panes we are in.
+export function sidePaneCommand(terminal: Terminal, cwd: string): string[] | null {
+  if (terminal.isTmux) {
+    // -h: side by side. With the command as its own argument, tmux runs it
+    // without a shell.
+    return ['tmux', 'split-window', '-h', '-c', cwd, 'claude']
+  }
+  if (terminal.isWindowsTerminal) {
+    // -w 0: this window. -V: side by side. -d: start in this folder.
+    return ['wt', '-w', '0', 'split-pane', '-V', '-d', cwd, 'claude']
+  }
+  return null
+}

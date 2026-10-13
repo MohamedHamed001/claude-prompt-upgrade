@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { FALLBACK_QUESTIONS, cleanReply, parseArgs, parseQuestions } from './upgrade'
+import { FALLBACK_QUESTIONS, cleanReply, parseArgs, parseQuestions, sidePaneCommand } from './upgrade'
 
 describe('parseArgs', () => {
   test('defaults to Claude', () => {
@@ -52,32 +52,48 @@ test('cleanReply strips a fence around the whole reply', () => {
   expect(cleanReply('  Do the thing.  ')).toBe('Do the thing.')
 })
 
-// End to end, with Codex and the person faked beneath the plugin. The test's
-// own hooks stand where the engine would: they answer `process.run` (Codex),
-// `AskUserQuestion` (the person) and `prompt.fill` (the prompt box).
+describe('sidePaneCommand', () => {
+  test('splits tmux side by side, in the same folder', () => {
+    expect(sidePaneCommand({ isTmux: true, isWindowsTerminal: false }, '/repo')).toEqual([
+      'tmux', 'split-window', '-h', '-c', '/repo', 'claude',
+    ])
+  })
+
+  test('splits Windows Terminal side by side, in the same folder', () => {
+    expect(sidePaneCommand({ isTmux: false, isWindowsTerminal: true }, 'C:\\repo')).toEqual([
+      'wt', '-w', '0', 'split-pane', '-V', '-d', 'C:\\repo', 'claude',
+    ])
+  })
+
+  test('prefers tmux when tmux runs inside Windows Terminal', () => {
+    expect(sidePaneCommand({ isTmux: true, isWindowsTerminal: true }, '/repo')?.[0]).toBe('tmux')
+  })
+
+  test('gives up on any other terminal', () => {
+    expect(sidePaneCommand({ isTmux: false, isWindowsTerminal: false }, '/repo')).toBeNull()
+  })
+})
+
+// End to end, with the outside world faked beneath the plugin. The test's own
+// hooks stand where the engine would: `process.run` (Codex and the terminal),
+// `AskUserQuestion` (the person), `ui.copy` (the clipboard), `env.get` (which
+// terminal this is) and `session.cwd`.
 
 const RUN = { origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } } as const
-const BAND = {
-  plugin: 'prompt-upgrade',
-  component: 'AbovePrompt',
-  props: {
-    hasSurvey: false,
-    isWorking: false,
-    maxRows: 12,
-    bodyColumns: 80,
-    scroll: { bodyRows: 11, offset: 0 },
-    view: {},
-  },
-} as const
 
 const ran = (stdout: string) => ({
   value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
 })
 
-test('/upgrade -codex asks the questions, then offers the rewrite', async ($, on) => {
+test('/upgrade -codex asks, copies the rewrite, then opens a tmux pane', async ($, on) => {
+  const commands: string[][] = []
   const codexInputs: string[] = []
-  const filled: string[] = []
+  const copied: string[] = []
   on('process.run', ($, e) => {
+    commands.push([...e.argv])
+    if (e.argv[0] !== 'codex') {
+      return ran('')
+    }
     codexInputs.push(e.init?.stdin ?? '')
     return codexInputs.length === 1
       ? ran('[{"header":"Scope","question":"Which part?","options":["Login form","Whole auth"]}]')
@@ -86,36 +102,40 @@ test('/upgrade -codex asks the questions, then offers the rewrite', async ($, on
   on('tool.call', { tool: 'AskUserQuestion' }, ($, e) => ({
     result: { questions: e.questions, answers: { 'Which part?': 'Login form' } },
   }))
-  on('prompt.fill', ($, e) => {
-    filled.push(e.text)
-    return { isFilled: true }
+  on('ui.copy', ($, e) => {
+    copied.push(e.text)
+    return { value: { isCopied: true } }
+  })
+  on('env.get', ($, e) => ({ value: e.name === 'TMUX' ? '/tmp/tmux-1/default,1,0' : undefined }))
+  on('session.cwd', () => ({ value: '/repo' }))
+
+  const result = await $.command.run({ ...RUN, command: 'upgrade', args: '-codex fix login' })
+
+  expect(result.text).toContain('Upgraded with Codex and copied')
+  expect(codexInputs[0]).toContain('fix login')
+  expect(codexInputs[1]).toContain('Which part? Login form')
+  expect(copied).toEqual(['Fix the login form so it shows an error on a wrong password.'])
+  // The pane opens last, after both Codex calls.
+  expect(commands.map(c => c[0])).toEqual(['codex', 'codex', 'tmux'])
+  expect(commands[2]).toEqual(['tmux', 'split-window', '-h', '-c', '/repo', 'claude'])
+})
+
+test('a missing codex CLI is reported, and nothing is copied or opened', async ($, on) => {
+  const commands: string[][] = []
+  on('process.run', ($, e) => {
+    commands.push([...e.argv])
+    return { deny: 'codex: not found' }
   })
 
   const result = await $.command.run({ ...RUN, command: 'upgrade', args: '-codex fix login' })
 
-  expect(result.text).toContain('Upgraded with Codex')
-  expect(codexInputs.length).toBe(2)
-  expect(codexInputs[0]).toContain('fix login')
-  expect(codexInputs[1]).toContain('Which part? Login form')
-
-  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await band.find({ type: 'Text', text: /Upgraded by Codex/ })).toBeDefined()
-  await band.press({ key: 'edit' })
-  expect(filled).toEqual(['Fix the login form so it shows an error on a wrong password.'])
-})
-
-test('a missing codex CLI is reported, and the band goes back to idle', async ($, on) => {
-  on('process.run', () => ({ deny: 'codex: not found' }))
-
-  const result = await $.command.run({ ...RUN, command: 'upgrade', args: '-codex fix login' })
-
   expect(result.text).toContain('Could not run Codex')
-  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await band.find({ key: 'codex' })).toBeDefined()
+  expect(commands.length).toBe(1)
 })
 
-test('/upgrade with no flag goes to Claude and upgrades the draft', async ($, on) => {
+test('/upgrade with no flag goes to Claude, upgrades the draft, and shows it when the clipboard fails', async ($, on) => {
   const models: string[] = []
+  const commands: string[][] = []
   on('prompt.read', () => ({ value: { text: 'add dark mode', cursor: 13 } }))
   on('model.complete', ($, e) => {
     models.push(e.model)
@@ -127,11 +147,17 @@ test('/upgrade with no flag goes to Claude and upgrades the draft', async ($, on
   on('tool.call', { tool: 'AskUserQuestion' }, ($, e) => ({
     result: { questions: e.questions, answers: { 'Which screens?': 'All' } },
   }))
+  on('ui.copy', () => ({ value: { isCopied: false, reason: 'no-clipboard' } }))
+  on('process.run', ($, e) => {
+    commands.push([...e.argv])
+    return ran('')
+  })
 
   const result = await $.command.run({ ...RUN, command: 'upgrade', args: '' })
 
-  expect(result.text).toContain('Upgraded with Claude')
   expect(models).toEqual(['sonnet', 'sonnet'])
-  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await band.find({ type: 'Text', text: /Add a dark mode/ })).toBeDefined()
+  expect(result.text).toContain('could not copy it (no-clipboard)')
+  expect(result.text).toContain('Add a dark mode to every screen.')
+  // Nothing to paste, so no pane.
+  expect(commands).toEqual([])
 })
